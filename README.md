@@ -1,7 +1,5 @@
 # memscan
 
-![GitHub Release](https://img.shields.io/github/v/release/effjy/memscan?include_prereleases)
-![GitHub last commit](https://img.shields.io/github/last-commit/effjy/memscan)
 ![GitHub issues](https://img.shields.io/github/issues/effjy/memscan)
 ![GitHub License](https://img.shields.io/github/license/effjy/memscan)
 ![Platform](https://img.shields.io/badge/platform-Linux-blue)
