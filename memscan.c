@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <signal.h>
 #include <errno.h>
+#include <limits.h>
 
 #define DEFAULT_DUMP_LEN 256
 #define CHUNK_SIZE 65536
@@ -58,7 +59,7 @@ void print_usage(const char *prog_name);
 void *memmem_case(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len);
 
 // Test string to scan for self-contained verification
-volatile const char self_test_string[] = "ANTIGRAVITY_MEMSCAN_TEST_STRING_9999_SECRET_DATA_xyz_12345!";
+volatile const char self_test_string[] = "MEMSCAN_SELFTEST_STRING_9999_SECRET_DATA_xyz_12345!";
 
 int main(int argc, char *argv[]) {
     char pid_str[64] = "";
@@ -92,13 +93,17 @@ int main(int argc, char *argv[]) {
                 }
                 custom_specified = true;
                 break;
-            case 'l':
-                config.dump_len = (size_t)strtoul(optarg, NULL, 10);
-                if (config.dump_len == 0) {
-                    fprintf(stderr, "Error: Dump length must be greater than 0.\n");
+            case 'l': {
+                char *l_end = NULL;
+                errno = 0;
+                long l_val = strtol(optarg, &l_end, 10);
+                if (errno != 0 || l_end == optarg || *l_end != '\0' || l_val <= 0) {
+                    fprintf(stderr, "Error: Dump length must be a positive integer.\n");
                     return 1;
                 }
+                config.dump_len = (size_t)l_val;
                 break;
+            }
             case 'x':
                 config.ascii_only = false; // hex dump mode
                 break;
@@ -140,9 +145,11 @@ int main(int argc, char *argv[]) {
                 config.scan_defaults = true;
                 break;
             case 'h':
-            default:
                 print_usage(argv[0]);
                 return 0;
+            default:
+                print_usage(argv[0]);
+                return 1;
         }
     }
 
@@ -156,7 +163,16 @@ int main(int argc, char *argv[]) {
     if (strcmp(pid_str, "self") == 0) {
         config.target_pid = getpid();
     } else {
-        config.target_pid = atoi(pid_str);
+        char *pid_end = NULL;
+        errno = 0;
+        long pid_val = strtol(pid_str, &pid_end, 10);
+        if (errno != 0 || pid_end == pid_str || *pid_end != '\0' ||
+            pid_val <= 0 || pid_val > INT_MAX) {
+            fprintf(stderr, "Error: Invalid PID '%s' specified.\n", pid_str);
+            if (config.out_file && config.out_file != stdout) fclose(config.out_file);
+            return 1;
+        }
+        config.target_pid = (int)pid_val;
     }
 
     if (config.target_pid <= 0) {
@@ -369,14 +385,18 @@ ssize_t read_memory(int mem_fd, unsigned long addr, uint8_t *buf, size_t size) {
         return bytes_read;
     }
 
-    // Fall back to reading page by page if large read failed
+    // Fall back to reading page by page if large read failed. Track the highest
+    // offset that contained real data so we report an accurate byte count rather
+    // than counting zero-filled holes as valid.
     size_t total_read = 0;
+    size_t last_valid_end = 0;
     size_t page_size = 4096;
     for (size_t offset = 0; offset < size; offset += page_size) {
         size_t to_read = (size - offset < page_size) ? (size - offset) : page_size;
         ssize_t r = pread64(mem_fd, buf + offset, to_read, (off64_t)(addr + offset));
         if (r > 0) {
             total_read += r;
+            last_valid_end = offset + (size_t)r;
             if ((size_t)r < to_read) {
                 memset(buf + offset + r, 0, to_read - r);
             }
@@ -384,7 +404,7 @@ ssize_t read_memory(int mem_fd, unsigned long addr, uint8_t *buf, size_t size) {
             memset(buf + offset, 0, to_read);
         }
     }
-    return total_read > 0 ? (ssize_t)size : -1;
+    return total_read > 0 ? (ssize_t)last_valid_end : -1;
 }
 
 void dump_recovered_data(FILE *out, const uint8_t *data, size_t len, bool ascii_only) {
@@ -495,6 +515,12 @@ void scan_region(int mem_fd, unsigned long start, unsigned long end, const char 
             continue;
         }
 
+        // read_memory may return fewer bytes than requested (short reads happen
+        // at page/region boundaries in /proc/pid/mem). Only scan/carry the bytes
+        // actually read; the rest of scan_buf is uninitialized heap.
+        size_t valid_read = (size_t)r;
+        scan_size = read_offset + valid_read;
+
         // Actual scanning
         for (size_t p_idx = 0; p_idx < num_patterns; p_idx++) {
             if (config->max_matches > 0 && config->match_count >= config->max_matches) {
@@ -560,7 +586,7 @@ void scan_region(int mem_fd, unsigned long start, unsigned long end, const char 
         }
 
         if (overlap_len > 0) {
-            if (to_read >= overlap_len) {
+            if (valid_read >= overlap_len) {
                 memcpy(prev_overlap, scan_buf + scan_size - overlap_len, overlap_len);
                 has_prev = true;
             } else {
