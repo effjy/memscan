@@ -250,7 +250,7 @@ sudo ./memscan -p 48271 -s -n 3 -o results.txt
 `memscan` contains a compile-time self-test string. You can find it in its own memory without needing a second process:
 
 ```bash
-./memscan -p self -m 'ANTIGRAVITY_MEMSCAN_TEST_STRING'
+./memscan -p self -m 'MEMSCAN_SELFTEST_STRING_9999_SECRET_DATA_xyz_12345!'
 ```
 
 No `sudo` is required when scanning your own process.
