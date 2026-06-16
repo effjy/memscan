@@ -1,9 +1,13 @@
-# memscan
+<div align="center">
+
+<a href="https://github.com/effjy/memscan/"><img src="titles/memscan-title.svg" height="52" alt="Memscan"></a>
 
 ![GitHub issues](https://img.shields.io/github/issues/effjy/memscan)
 ![GitHub License](https://img.shields.io/github/license/effjy/memscan)
 ![Platform](https://img.shields.io/badge/platform-Linux-blue)
 ![Language](https://img.shields.io/badge/language-C99-blue)
+
+</div>
 
 A Linux command-line tool that scans the live memory of a running process and recovers data matching a given byte pattern or magic header. It reads `/proc/<pid>/maps` to enumerate memory regions and `/proc/<pid>/mem` to extract their contents, then prints (or saves) any matching data it finds.
 
